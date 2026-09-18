@@ -1,0 +1,550 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Log Analytics Workspace (e.g., law-cybozu-sentinel)"
+      }
+    },
+    "dceName": {
+      "type": "string",
+      "defaultValue": "dce-cybozu-audit-logs",
+      "metadata": {
+        "description": "Name of the Data Collection Endpoint"
+      }
+    },
+    "dcrName": {
+      "type": "string",
+      "defaultValue": "dcr-cybozu-audit-logs",
+      "metadata": {
+        "description": "Name of the Data Collection Rule"
+      }
+    }
+  },
+  "variables": {
+    "location": "[resourceGroup().location]",
+    "tableName": "CybozuAuditLogs_CL",
+    "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+    "dceResourceId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dceName'))]",
+    "_solutionName": "Cybozu Audit Logs",
+    "_solutionVersion": "3.0.0",
+    "_solutionAuthor": "Cybozu",
+    "_solutionTier": "Community",
+    "solutionId": "cybozu.azure-sentinel-solution-cybozu",
+    "_solutionId": "[variables('solutionId')]",
+    "dataConnectorVersionConnectorDefinition": "1.0.0",
+    "dataConnectorVersionConnections": "1.0.0",
+    "_dataConnectorContentIdConnectorDefinition": "CybozuAuditLogsConnectorDefinition",
+    "_dataConnectorContentIdConnections": "CybozuAuditLogsConnector",
+    "dataConnectorTemplateNameConnectorDefinition": "[concat(parameters('workspaceName'),'-dc-',uniquestring(variables('_dataConnectorContentIdConnectorDefinition')))]",
+    "dataConnectorTemplateNameConnections": "[concat(parameters('workspaceName'),'-dc-',uniquestring(variables('_dataConnectorContentIdConnections')))]"
+  },
+  "resources": [
+    {
+      "comments": "========== 1. Log Analytics Workspace ==========",
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[parameters('workspaceName')]",
+      "location": "[variables('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        }
+      }
+    },
+    {
+      "comments": "========== 2. Microsoft Sentinel Onboarding ==========",
+      "type": "Microsoft.SecurityInsights/onboardingStates",
+      "apiVersion": "2024-03-01",
+      "name": "default",
+      "dependsOn": [
+        "[variables('workspaceResourceId')]"
+      ],
+      "scope": "[variables('workspaceResourceId')]",
+      "properties": {}
+    },
+    {
+      "comments": "========== 3. Data Collection Endpoint (DCE) ==========",
+      "type": "Microsoft.Insights/dataCollectionEndpoints",
+      "apiVersion": "2023-03-11",
+      "name": "[parameters('dceName')]",
+      "location": "[variables('location')]",
+      "properties": {
+        "networkAcls": {
+          "publicNetworkAccess": "Enabled"
+        }
+      }
+    },
+    {
+      "comments": "========== 4. Content Package ==========",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/contentPackages",
+      "apiVersion": "2023-04-01-preview",
+      "name": "[concat(parameters('workspaceName'),'/Microsoft.SecurityInsights/', variables('_solutionId'))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/onboardingStates', 'default')]"
+      ],
+      "properties": {
+        "version": "[variables('_solutionVersion')]",
+        "kind": "Solution",
+        "contentSchemaVersion": "3.0.0",
+        "contentId": "[variables('_solutionId')]",
+        "source": {
+          "kind": "Solution",
+          "name": "[variables('_solutionName')]",
+          "sourceId": "[variables('_solutionId')]"
+        },
+        "author": {
+          "name": "[variables('_solutionAuthor')]"
+        },
+        "support": {
+          "name": "[variables('_solutionAuthor')]",
+          "tier": "[variables('_solutionTier')]"
+        },
+        "dependencies": {
+          "operator": "AND",
+          "criteria": [
+            {
+              "kind": "DataConnector",
+              "contentId": "[variables('_dataConnectorContentIdConnectorDefinition')]",
+              "version": "[variables('dataConnectorVersionConnectorDefinition')]"
+            }
+          ]
+        },
+        "firstPublishDate": "2026-09-14",
+        "providers": [
+          "[variables('_solutionAuthor')]"
+        ],
+        "contentKind": "Solution",
+        "packageId": "[variables('_solutionId')]",
+        "contentProductId": "[concat(variables('_solutionId'),'-','sl','-', uniqueString(concat(variables('_solutionId'),'-','Solution','-',variables('_solutionId'),'-', variables('_solutionVersion'))))]",
+        "displayName": "[variables('_solutionName')]",
+        "publisherDisplayName": "[variables('_solutionAuthor')]",
+        "descriptionHtml": "Ingests Cybozu audit logs into Microsoft Sentinel."
+      }
+    },
+    {
+      "comments": "========== 5. Content Template: DCR + Custom Table ==========",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/contentTemplates",
+      "apiVersion": "2023-04-01-preview",
+      "name": "[concat(parameters('workspaceName'),'/Microsoft.SecurityInsights/', variables('dataConnectorTemplateNameConnectorDefinition'), variables('dataConnectorVersionConnectorDefinition'))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/contentPackages', variables('_solutionId'))]",
+        "[variables('dceResourceId')]"
+      ],
+      "properties": {
+        "contentId": "[variables('_dataConnectorContentIdConnectorDefinition')]",
+        "displayName": "[concat(variables('_solutionName'), ' Connector Definition')]",
+        "contentKind": "DataConnector",
+        "mainTemplate": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "[variables('dataConnectorVersionConnectorDefinition')]",
+          "parameters": {},
+          "variables": {},
+          "resources": [
+            {
+              "name": "[concat(parameters('workspaceName'),'/Microsoft.SecurityInsights/',concat('DataConnector-', variables('_dataConnectorContentIdConnectorDefinition')))]",
+              "apiVersion": "2022-01-01-preview",
+              "type": "Microsoft.OperationalInsights/workspaces/providers/metadata",
+              "properties": {
+                "parentId": "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/dataConnectorDefinitions', variables('_dataConnectorContentIdConnectorDefinition'))]",
+                "contentId": "[variables('_dataConnectorContentIdConnectorDefinition')]",
+                "kind": "DataConnector",
+                "version": "[variables('dataConnectorVersionConnectorDefinition')]",
+                "source": {
+                  "sourceId": "[variables('_solutionId')]",
+                  "name": "[variables('_solutionName')]",
+                  "kind": "Solution"
+                },
+                "author": {
+                  "name": "[variables('_solutionAuthor')]"
+                },
+                "support": {
+                  "name": "[variables('_solutionAuthor')]",
+                  "tier": "[variables('_solutionTier')]"
+                },
+                "dependencies": {
+                  "criteria": [
+                    {
+                      "version": "[variables('dataConnectorVersionConnections')]",
+                      "contentId": "[variables('_dataConnectorContentIdConnections')]",
+                      "kind": "ResourcesDataConnector"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "[parameters('dcrName')]",
+              "apiVersion": "2021-09-01-preview",
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "location": "[variables('location')]",
+              "kind": null,
+              "properties": {
+                "dataCollectionEndpointId": "[variables('dceResourceId')]",
+                "streamDeclarations": {
+                  "Custom-CybozuAuditLogs_CL": {
+                    "columns": [
+                      { "name": "id",          "type": "string" },
+                      { "name": "timestamp",   "type": "string" },
+                      { "name": "user",        "type": "dynamic" },
+                      { "name": "ipAddress",   "type": "string" },
+                      { "name": "severity",    "type": "string" },
+                      { "name": "service",     "type": "string" },
+                      { "name": "application", "type": "string" },
+                      { "name": "action",      "type": "string" },
+                      { "name": "result",      "type": "string" },
+                      { "name": "errorCode",   "type": "string" },
+                      { "name": "note",        "type": "string" }
+                    ]
+                  }
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "workspaceResourceId": "[variables('workspaceResourceId')]",
+                      "name": "lawDestination"
+                    }
+                  ]
+                },
+                "dataFlows": [
+                  {
+                    "streams": ["Custom-CybozuAuditLogs_CL"],
+                    "destinations": ["lawDestination"],
+                    "transformKql": "source | extend TimeGenerated = todatetime(['timestamp']), EventId = ['id'], Timestamp = todatetime(['timestamp']), UserId = iif(isnull(['user']), '', tostring(['user'].id)), UserCode = iif(isnull(['user']), '', tostring(['user'].code)), UserName = iif(isnull(['user']), '', tostring(['user'].name)), IpAddress = ipAddress, Severity = severity, Service = service, Application = application, Action = action, Result = result, ErrorCode = errorCode, Note = note | project TimeGenerated, EventId, Timestamp, UserId, UserCode, UserName, IpAddress, Severity, Service, Application, Action, Result, ErrorCode, Note",
+                    "outputStream": "Custom-CybozuAuditLogs_CL"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "[variables('tableName')]",
+              "apiVersion": "2022-10-01",
+              "type": "Microsoft.OperationalInsights/workspaces/tables",
+              "location": "[variables('location')]",
+              "kind": null,
+              "properties": {
+                "schema": {
+                  "name": "[variables('tableName')]",
+                  "columns": [
+                    { "name": "TimeGenerated", "type": "datetime", "description": "Timestamp when the event was ingested" },
+                    { "name": "EventId",       "type": "string",   "description": "Unique event identifier (UUID)" },
+                    { "name": "Timestamp",     "type": "datetime", "description": "Timestamp when the event occurred" },
+                    { "name": "UserId",        "type": "string",   "description": "ID of the user who performed the action" },
+                    { "name": "UserCode",      "type": "string",   "description": "Code identifying the user" },
+                    { "name": "UserName",      "type": "string",   "description": "Display name of the user" },
+                    { "name": "IpAddress",     "type": "string",   "description": "IP address of the client" },
+                    { "name": "Severity",      "type": "string",   "description": "Severity level of the event" },
+                    { "name": "Service",       "type": "string",   "description": "Service that generated the event" },
+                    { "name": "Application",   "type": "string",   "description": "Application name" },
+                    { "name": "Action",        "type": "string",   "description": "Action performed" },
+                    { "name": "Result",        "type": "string",   "description": "Result of the action" },
+                    { "name": "ErrorCode",     "type": "string",   "description": "Error code if the action failed" },
+                    { "name": "Note",          "type": "string",   "description": "Additional notes or details" }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "packageKind": "Solution",
+        "packageVersion": "[variables('_solutionVersion')]",
+        "packageName": "[variables('_solutionName')]",
+        "contentProductId": "[concat(variables('_solutionId'),'-','dc','-', uniqueString(concat(variables('_solutionId'),'-','DataConnector','-',variables('_dataConnectorContentIdConnectorDefinition'),'-', variables('dataConnectorVersionConnectorDefinition'))))]",
+        "packageId": "[variables('_solutionId')]",
+        "contentSchemaVersion": "3.0.0",
+        "version": "[variables('_solutionVersion')]"
+      }
+    },
+    {
+      "comments": "========== 6. Connector Definition (Sentinel UI) ==========",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/dataConnectorDefinitions",
+      "apiVersion": "2022-09-01-preview",
+      "name": "[concat(parameters('workspaceName'),'/Microsoft.SecurityInsights/',variables('_dataConnectorContentIdConnectorDefinition'))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/onboardingStates', 'default')]"
+      ],
+      "kind": "Customizable",
+      "properties": {
+        "connectorUiConfig": {
+          "id": "[variables('_dataConnectorContentIdConnectorDefinition')]",
+          "title": "Cybozu Audit Logs",
+          "publisher": "Cybozu",
+          "descriptionMarkdown": "This connector ingests Cybozu audit logs into Microsoft Sentinel.\n\nEnter the API token below and select **Connect**. To rotate the token, select **Disconnect**, enter the new token, then select **Connect** again.",
+          "graphQueriesTableName": "[variables('tableName')]",
+          "graphQueries": [
+            {
+              "metricName": "Total events received",
+              "legend": "CybozuAuditLogs_CL",
+              "baseQuery": "CybozuAuditLogs_CL"
+            }
+          ],
+          "sampleQueries": [
+            {
+              "description": "All Cybozu audit logs",
+              "query": "CybozuAuditLogs_CL | sort by TimeGenerated desc"
+            }
+          ],
+          "dataTypes": [
+            {
+              "name": "CybozuAuditLogs_CL",
+              "lastDataReceivedQuery": "CybozuAuditLogs_CL | summarize Time = max(TimeGenerated) | where isnotempty(Time)"
+            }
+          ],
+          "connectivityCriteria": [
+            {
+              "type": "HasDataConnectors"
+            }
+          ],
+          "availability": {
+            "status": 1,
+            "isPreview": false
+          },
+          "permissions": {
+            "resourceProvider": [
+              {
+                "provider": "Microsoft.OperationalInsights/workspaces",
+                "permissionsDisplayText": "Read and write permissions are required.",
+                "providerDisplayName": "Workspace",
+                "requiredPermissions": {
+                  "read": true,
+                  "write": true,
+                  "delete": true
+                },
+                "scope": "Workspace"
+              }
+            ]
+          },
+          "instructionSteps": [
+            {
+              "title": "Connect Cybozu Audit Logs to Microsoft Sentinel",
+              "description": "Enter the Domain URL and API token that has the Audit Log Read scope, then select Connect.",
+              "instructions": [
+                {
+                  "type": "Textbox",
+                  "parameters": {
+                    "label": "Domain URL",
+                    "placeholder": "https://example.cybozu.com",
+                    "type": "text",
+                    "name": "domainUrl",
+                    "required": true
+                  }
+                },
+                {
+                  "type": "Textbox",
+                  "parameters": {
+                    "label": "API Token",
+                    "placeholder": "Enter the API token",
+                    "type": "password",
+                    "name": "apiToken",
+                    "required": true
+                  }
+                },
+                {
+                  "type": "ConnectionToggleButton",
+                  "parameters": {
+                    "connectLabel": "Connect",
+                    "name": "connect"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "comments": "========== 7. Metadata for Connector Definition ==========",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/metadata",
+      "apiVersion": "2022-01-01-preview",
+      "name": "[concat(parameters('workspaceName'),'/Microsoft.SecurityInsights/',concat('DataConnector-', variables('_dataConnectorContentIdConnectorDefinition')))]",
+      "dependsOn": [
+        "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/dataConnectorDefinitions', variables('_dataConnectorContentIdConnectorDefinition'))]"
+      ],
+      "properties": {
+        "parentId": "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/dataConnectorDefinitions', variables('_dataConnectorContentIdConnectorDefinition'))]",
+        "contentId": "[variables('_dataConnectorContentIdConnectorDefinition')]",
+        "kind": "DataConnector",
+        "version": "[variables('dataConnectorVersionConnectorDefinition')]",
+        "source": {
+          "sourceId": "[variables('_solutionId')]",
+          "name": "[variables('_solutionName')]",
+          "kind": "Solution"
+        },
+        "author": {
+          "name": "[variables('_solutionAuthor')]"
+        },
+        "support": {
+          "name": "[variables('_solutionAuthor')]",
+          "tier": "[variables('_solutionTier')]"
+        },
+        "dependencies": {
+          "criteria": [
+            {
+              "version": "[variables('dataConnectorVersionConnections')]",
+              "contentId": "[variables('_dataConnectorContentIdConnections')]",
+              "kind": "ResourcesDataConnector"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "comments": "========== 8. Content Template: RestApiPoller (instantiated on Connect) ==========",
+      "type": "Microsoft.OperationalInsights/workspaces/providers/contentTemplates",
+      "apiVersion": "2023-04-01-preview",
+      "name": "[concat(parameters('workspaceName'),'/Microsoft.SecurityInsights/', variables('dataConnectorTemplateNameConnections'), variables('dataConnectorVersionConnections'))]",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/contentPackages', variables('_solutionId'))]"
+      ],
+      "properties": {
+        "contentId": "[variables('_dataConnectorContentIdConnections')]",
+        "displayName": "[concat(variables('_solutionName'), ' Connections')]",
+        "contentKind": "ResourcesDataConnector",
+        "mainTemplate": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "[variables('dataConnectorVersionConnections')]",
+          "parameters": {
+            "guidValue": {
+              "defaultValue": "[[newGuid()]",
+              "type": "securestring"
+            },
+            "innerWorkspace": {
+              "defaultValue": "[parameters('workspaceName')]",
+              "type": "securestring"
+            },
+            "connectorDefinitionName": {
+              "defaultValue": "[variables('_dataConnectorContentIdConnectorDefinition')]",
+              "type": "securestring",
+              "minLength": 1
+            },
+            "dcrConfig": {
+              "defaultValue": {
+                "dataCollectionEndpoint": "data collection Endpoint",
+                "dataCollectionRuleImmutableId": "data collection rule immutableId"
+              },
+              "type": "object"
+            },
+            "domainUrl": {
+              "defaultValue": "domainUrl",
+              "type": "securestring",
+              "minLength": 1
+            },
+            "apiToken": {
+              "defaultValue": "apiToken",
+              "type": "securestring",
+              "minLength": 1
+            }
+          },
+          "variables": {
+            "_dataConnectorContentIdConnections": "[variables('_dataConnectorContentIdConnections')]"
+          },
+          "resources": [
+            {
+              "name": "[concat(parameters('workspaceName'),'/Microsoft.SecurityInsights/',concat('DataConnector-', variables('_dataConnectorContentIdConnections')))]",
+              "apiVersion": "2022-01-01-preview",
+              "type": "Microsoft.OperationalInsights/workspaces/providers/metadata",
+              "properties": {
+                "parentId": "[extensionResourceId(variables('workspaceResourceId'), 'Microsoft.SecurityInsights/dataConnectors', variables('_dataConnectorContentIdConnections'))]",
+                "contentId": "[variables('_dataConnectorContentIdConnections')]",
+                "kind": "ResourcesDataConnector",
+                "version": "[variables('dataConnectorVersionConnections')]",
+                "source": {
+                  "sourceId": "[variables('_solutionId')]",
+                  "name": "[variables('_solutionName')]",
+                  "kind": "Solution"
+                },
+                "author": {
+                  "name": "[variables('_solutionAuthor')]"
+                },
+                "support": {
+                  "name": "[variables('_solutionAuthor')]",
+                  "tier": "[variables('_solutionTier')]"
+                }
+              }
+            },
+            {
+              "name": "[[concat(parameters('innerWorkspace'),'/Microsoft.SecurityInsights/', 'CybozuAuditLogsPoller', parameters('guidValue'))]",
+              "apiVersion": "2022-12-01-preview",
+              "type": "Microsoft.OperationalInsights/workspaces/providers/dataConnectors",
+              "location": "[variables('location')]",
+              "kind": "RestApiPoller",
+              "properties": {
+                "connectorDefinitionName": "[[parameters('connectorDefinitionName')]",
+                "dataType": "CybozuAuditLogs_CL",
+                "auth": {
+                  "type": "APIKey",
+                  "apiKey": "[[parameters('apiToken')]",
+                  "apiKeyName": "Authorization",
+                  "apiKeyIdentifier": "Bearer"
+                },
+                "request": {
+                  "apiEndpoint": "[[concat(parameters('domainUrl'), '/v1/audit/logs.json')]",
+                  "httpMethod": "GET",
+                  "headers": {
+                    "Accept": "application/json"
+                  },
+                  "queryParameters": {
+                    "limit": 100,
+                    "order": "asc"
+                  },
+                  "queryTimeFormat": "yyyy-MM-ddTHH:mm:ssZ",
+                  "queryWindowInMin": 10,
+                  "startTimeAttributeName": "since",
+                  "endTimeAttributeName": "until",
+                  "retryCount": 3,
+                  "timeoutInSeconds": 60,
+                  "rateLimitConfig": {
+                    "evaluation": {
+                      "checkMode": "OnlyWhen429"
+                    },
+                    "retryStrategy": {
+                      "useResetOrRetryAfterHeaders": true
+                    }
+                  }
+                },
+                "paging": {
+                  "pagingType": "NextPageToken",
+                  "nextPageTokenJsonPath": "$.nextPageToken",
+                  "nextPageParaName": "pageToken"
+                },
+                "response": {
+                  "eventsJsonPaths": ["$.logs"],
+                  "format": "json"
+                },
+                "dcrConfig": {
+                  "dataCollectionEndpoint": "[[parameters('dcrConfig').dataCollectionEndpoint]",
+                  "dataCollectionRuleImmutableId": "[[parameters('dcrConfig').dataCollectionRuleImmutableId]",
+                  "streamName": "Custom-CybozuAuditLogs_CL"
+                },
+                "isActive": true
+              }
+            }
+          ]
+        },
+        "packageKind": "Solution",
+        "packageVersion": "[variables('_solutionVersion')]",
+        "packageName": "[variables('_solutionName')]",
+        "contentProductId": "[concat(variables('_solutionId'),'-','rdc','-', uniqueString(concat(variables('_solutionId'),'-','ResourcesDataConnector','-',variables('_dataConnectorContentIdConnections'),'-', variables('dataConnectorVersionConnections'))))]",
+        "packageId": "[variables('_solutionId')]",
+        "contentSchemaVersion": "3.0.0",
+        "version": "[variables('_solutionVersion')]"
+      }
+    }
+  ],
+  "outputs": {
+    "workspaceId": {
+      "type": "string",
+      "value": "[variables('workspaceResourceId')]"
+    },
+    "dceEndpoint": {
+      "type": "string",
+      "value": "[reference(variables('dceResourceId'), '2023-03-11').logsIngestion.endpoint]"
+    }
+  }
+}
