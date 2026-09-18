@@ -35,7 +35,7 @@ Cybozu  ──►  Microsoft Sentinel (CCP / RestApiPoller)  ──►  CybozuAu
 
 以下のボタンをクリックすると、Azure ポータルでテンプレートのデプロイ画面が開きます。
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/PLACEHOLDER_DEPLOY_URL)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fcybozu%2Faudit-log-siem-integrations%2Fmain%2Fsentinel%2Fazuredeploy.json)
 
 デプロイ時に以下のリソースが作成されます:
 - **Log Analytics ワークスペース**（新規作成、または既存を使用）
@@ -113,7 +113,7 @@ Setup consists of two steps: **Deploy** and **Connect**.
 
 Click the button below to open the deployment form in the Azure portal.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/PLACEHOLDER_DEPLOY_URL)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fcybozu%2Faudit-log-siem-integrations%2Fmain%2Fsentinel%2Fazuredeploy.json)
 
 The following resources will be created on deploy:
 - **Log Analytics Workspace** (new or existing)
